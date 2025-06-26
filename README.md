@@ -1,7 +1,21 @@
+# Dicoding Collection Dashboard ✨
 [Sumber Dataset](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce)
 
-[Visit the website app](https://ecommerce-endahrakhma.streamlit.app/)
+## Setup Environment - Anaconda
+```
+conda create --name ecomm-da python=3.9
+conda activate ecomm-da
+pip install -r requirements.txt
+```
 
-![E-commerce Streamlit Dashboard](dashboard-streamlit.jpg)
+## Run steamlit app
+```
+streamlit run dashboard_app.py
+```
+
+## Run steamlit cloud
+[https://ecommerce-endahrakhma.streamlit.app/](https://ecommerce-endahrakhma.streamlit.app/)
+
+![E-commerce Streamlit Screenshot](dashboard-streamlit.jpg)
 
 
