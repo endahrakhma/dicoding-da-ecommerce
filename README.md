@@ -8,12 +8,12 @@ conda activate ecomm-da
 pip install -r requirements.txt
 ```
 
-## Run steamlit app
+## Run streamlit app
 ```
 streamlit run dashboard_app.py
 ```
 
-## Run steamlit cloud
+## Run streamlit cloud
 [https://ecommerce-dashboard-endahrakhma.streamlit.app/](https://ecommerce-dashboard-endahrakhma.streamlit.app/)
 
 
