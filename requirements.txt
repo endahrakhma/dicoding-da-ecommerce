@@ -7,3 +7,4 @@ protobuf
 pillow
 babel
 folium
+st_folium
