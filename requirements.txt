@@ -7,5 +7,4 @@ protobuf
 pillow
 babel
 folium
-st_folium
 streamlit_folium
