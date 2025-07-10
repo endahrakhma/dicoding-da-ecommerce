@@ -3,23 +3,31 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import streamlit as st
 from babel.numbers import format_currency
+import folium
+from streamlit_folium import st_folium
+#import webbrowser
 
 import warnings
 warnings.filterwarnings("ignore")
 
 sns.set(style='dark')
 
+global main_df, map_df, daily_orders_df, sum_order_items_df, bystate_df, \
+    rfm_df, bypayment_df, byreview_df, byseller_df, sales_cust_df
+
 # Helper function yang dibutuhkan untuk menyiapkan berbagai dataframe
 
 def create_daily_orders_df(df):
     daily_orders_df = df.resample(rule='D', on='order_purchase_timestamp').agg({
         "order_id": "nunique",
-        "price": "sum"
+        "price": "sum",
+        "customer_unique_id": "nunique"
     })
     daily_orders_df = daily_orders_df.reset_index()
     daily_orders_df.rename(columns={
         "order_id": "order_count",
-        "price": "revenue"
+        "price": "revenue",
+        "customer_unique_id": "cust_count"
     }, inplace=True)
     
     return daily_orders_df
@@ -75,6 +83,19 @@ def create_rfm_df(df):
     
     return rfm_df
 
+def map_bycity_df(df):
+    sales_cust_df = df.groupby(['customer_city','geolocation_lat','geolocation_lng']).agg({
+        "customer_unique_id": "nunique",
+        "price": "sum"
+    })
+    sales_cust_df = sales_cust_df.reset_index()
+    sales_cust_df.rename(columns={
+        "customer_unique_id": "cust_count",
+        "price": "revenue"
+    }, inplace=True)
+    
+    return sales_cust_df
+
 # Load cleaned data
 all_df = pd.read_csv("merged_df.csv")
 
@@ -89,7 +110,16 @@ for column in datetime_columns:
 min_date = all_df["order_purchase_timestamp"].min()
 max_date = all_df["order_purchase_timestamp"].max()
 
-with st.sidebar:
+if 'selectbox_city' not in st.session_state:
+    st.session_state.selectbox_city = None
+
+if 'selectbox_cat' not in st.session_state:
+    st.session_state.selectbox_cat = None
+    
+if 'submitted' not in st.session_state:
+    st.session_state.submitted = False
+    
+with st.sidebar.form("filters_form"):
     # Menambahkan logo perusahaan
     st.image("ecomm-logo.png")
     
@@ -99,15 +129,21 @@ with st.sidebar:
         max_value=max_date,
         value=[min_date, max_date]
     )
-    
+                            
     # Get unique values for the filter
     cities = ['All'] + list(all_df['customer_city'].unique())
     categories = ['All'] + list(all_df['product_category_english'].unique())
     
-    # Create a multiselect widget for filtering by 'City'
-    selected_cities = st.selectbox("Select a City", options=cities)
-    selected_cat = st.selectbox("Select a Product Category", options=categories)
-
+    # Create a multiselect widget for filtering by 'City' and 'Category'
+    selected_cities = st.selectbox("Select a City", options=cities, index=st.session_state.selectbox_city)
+    selected_cat = st.selectbox("Select a Product Category", options=categories, index=st.session_state.selectbox_cat)
+        
+    submitted = st.form_submit_button("Apply")
+    if submitted:
+        st.session_state.selectbox_city = cities.index(selected_cities)
+        st.session_state.selectbox_cat = categories.index(selected_cat)
+        st.session_state.submitted = True
+        
     if selected_cities == 'All' and selected_cat == 'All':
         main_df = all_df[(all_df["order_purchase_timestamp"] >= str(start_date)) & \
                          (all_df["order_purchase_timestamp"] <= str(end_date))]
@@ -123,177 +159,211 @@ with st.sidebar:
         main_df = all_df[(all_df["order_purchase_timestamp"] >= str(start_date)) & \
                          (all_df["order_purchase_timestamp"] <= str(end_date)) &\
                              (all_df["customer_city"]==selected_cities) & (all_df["product_category_english"]==selected_cat)]
-
+        
 # st.dataframe(main_df)
 
-# # Menyiapkan berbagai dataframe
+## Menyiapkan berbagai dataframe
 daily_orders_df = create_daily_orders_df(main_df)
-sum_order_items_df = create_sum_order_items_df(main_df)
 bystate_df = create_bystate_df(main_df)
 rfm_df = create_rfm_df(main_df)
+sum_order_items_df = create_sum_order_items_df(main_df)
 bypayment_df = create_bypayment_df(main_df)
 byreview_df = create_byreview_df(main_df)
 byseller_df = create_byseller_df(main_df)
+sales_cust_df = map_bycity_df(main_df)
 
-# plot number of daily orders (2021)
+# Daily orders
 st.header('Dicoding e-Commerce Dashboard :sparkles:')
-st.subheader('Daily Orders')
 
-col1, col2 = st.columns(2)
+tab1, tab2 = st.tabs(['Metrics', 'Map'])
+with tab1:
+    st.subheader('Daily Orders')
 
-with col1:
-    total_orders = daily_orders_df.order_count.sum()
-    st.metric("Total orders", value=total_orders)
-
-with col2:
-    total_revenue = format_currency(daily_orders_df.revenue.sum(), "BRL", locale='es_CO') 
-    st.metric("Total Revenue", value=total_revenue)
-
-fig, ax = plt.subplots(figsize=(16, 8))
-ax.plot(
-    daily_orders_df["order_purchase_timestamp"],
-    daily_orders_df["order_count"],
-    marker='o', 
-    linewidth=2,
-    color="#90CAF9"
-)
-ax.tick_params(axis='y', labelsize=20)
-ax.tick_params(axis='x', labelsize=15)
-
-st.pyplot(fig)
-
-
-# Product performance
-st.subheader("Best & Worst Performing Product")
-
-fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(35, 15))
-
-colors = ["#90CAF9", "#D3D3D3", "#D3D3D3", "#D3D3D3", "#D3D3D3"]
-
-sns.barplot(x="cnt", y="product_category_english", data=sum_order_items_df.sort_values(by="cnt", ascending=False).head(5), palette=colors, ax=ax[0])
-ax[0].set_ylabel(None)
-ax[0].set_xlabel("Number of Sales", fontsize=30)
-ax[0].set_title("Best Performing Product", loc="center", fontsize=50)
-ax[0].tick_params(axis='y', labelsize=35)
-ax[0].tick_params(axis='x', labelsize=30)
-
-sns.barplot(x="cnt", y="product_category_english", data=sum_order_items_df.sort_values(by="cnt", ascending=True).head(5), palette=colors, ax=ax[1])
-ax[1].set_ylabel(None)
-ax[1].set_xlabel("Number of Sales", fontsize=30)
-ax[1].invert_xaxis()
-ax[1].yaxis.set_label_position("right")
-ax[1].yaxis.tick_right()
-ax[1].set_title("Worst Performing Product", loc="center", fontsize=50)
-ax[1].tick_params(axis='y', labelsize=35)
-ax[1].tick_params(axis='x', labelsize=30)
-
-st.pyplot(fig)
-
-# customer behaviour
-st.subheader("Customer Behaviour")
-
-col1, col2 = st.columns(2)
-
-# Create the pie chart
-with col1:
-    fig, ax = plt.subplots(figsize=(10, 10), dpi=100)
-    #explode = (0.05, 0, 0, 0)
-    colors = sns.color_palette('Blues')[0:len(bypayment_df)] # Use a Seaborn color palette
-    ax.pie(bypayment_df['order_count'], labels=bypayment_df['payment_type'], autopct='%1.2f%%', colors=colors, startangle=45, textprops={'fontsize': 25})
-    ax.axis('equal') # Ensures the pie chart is drawn as a circle
-    ax.set_title("Trend of Payment Type", loc="center", fontsize=30, weight='bold')
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        total_orders = daily_orders_df.order_count.sum()
+        st.metric("Total orders", value=total_orders)
+    
+    with col2:
+        total_revenue = format_currency(daily_orders_df.revenue.sum(), "BRL", locale='es_CO') 
+        st.metric("Total Revenue", value=total_revenue)
+    
+    with col3:
+        total_cust = daily_orders_df.cust_count.sum()
+        st.metric("Total Customers", value=total_cust)
+    
+    fig, ax = plt.subplots(figsize=(16, 8))
+    ax.plot(
+        daily_orders_df["order_purchase_timestamp"],
+        daily_orders_df["order_count"],
+        marker='o', 
+        linewidth=2,
+        color="#90CAF9"
+    )
+    ax.tick_params(axis='y', labelsize=20)
+    ax.tick_params(axis='x', labelsize=15)
+    
+    st.pyplot(fig)
+    
+    
+    # Product performance
+    st.subheader("Best & Worst Performing Product")
+    
+    fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(35, 15))
+    
+    colors = ["#90CAF9", "#D3D3D3", "#D3D3D3", "#D3D3D3", "#D3D3D3"]
+    
+    sns.barplot(x="cnt", y="product_category_english", data=sum_order_items_df.sort_values(by="cnt", ascending=False).head(5), palette=colors, ax=ax[0])
+    ax[0].set_ylabel(None)
+    ax[0].set_xlabel("Number of Sales", fontsize=30)
+    ax[0].set_title("Best Performing Product", loc="center", fontsize=50)
+    ax[0].tick_params(axis='y', labelsize=35)
+    ax[0].tick_params(axis='x', labelsize=30)
+    
+    sns.barplot(x="cnt", y="product_category_english", data=sum_order_items_df.sort_values(by="cnt", ascending=True).head(5), palette=colors, ax=ax[1])
+    ax[1].set_ylabel(None)
+    ax[1].set_xlabel("Number of Sales", fontsize=30)
+    ax[1].invert_xaxis()
+    ax[1].yaxis.set_label_position("right")
+    ax[1].yaxis.tick_right()
+    ax[1].set_title("Worst Performing Product", loc="center", fontsize=50)
+    ax[1].tick_params(axis='y', labelsize=35)
+    ax[1].tick_params(axis='x', labelsize=30)
+    
+    st.pyplot(fig)
+    
+    # customer behaviour
+    st.subheader("Customer Behaviour")
+    
+    col1, col2 = st.columns(2)
+    
+    # Create the pie chart
+    with col1:
+        fig, ax = plt.subplots(figsize=(10, 10), dpi=100)
+        #explode = (0.05, 0, 0, 0)
+        colors = sns.color_palette('Blues')[0:len(bypayment_df)] # Use a Seaborn color palette
+        ax.pie(bypayment_df['order_count'], labels=bypayment_df['payment_type'], autopct='%1.2f%%', colors=colors, startangle=45, textprops={'fontsize': 25})
+        ax.axis('equal') # Ensures the pie chart is drawn as a circle
+        ax.set_title("Trend of Payment Type", loc="center", fontsize=30, weight='bold')
+        st.pyplot(fig)
+    
+    with col2:
+        fig, ax = plt.subplots(dpi=170)
+        #explode = (0.05, 0, 0, 0, 0)
+        colors = sns.light_palette('seagreen')[0:len(byreview_df)] # Use a Seaborn color palette
+        ax.pie(byreview_df['review_count'], labels=byreview_df['review_score'], autopct='%1.2f%%', colors=colors, startangle=45, textprops={'fontsize': 12})
+        ax.axis('equal') # Ensures the pie chart is drawn as a circle
+        ax.set_title("Distribution of Review Score", loc="center", fontsize=15, weight='bold')
+        st.pyplot(fig)
+    
+    st.subheader("Top 10 Number of Customer by City")
+    
+    fig, ax = plt.subplots(figsize=(20, 10))
+    colors = ["#90CAF9","#D3D3D3","#D3D3D3","#D3D3D3","#D3D3D3","#D3D3D3","#D3D3D3","#D3D3D3","#D3D3D3","#D3D3D3"]
+    sns.barplot(
+        x="customer_count", 
+        y="customer_city",
+        data=bystate_df.sort_values(by="customer_count", ascending=False),
+        palette=colors,
+        ax=ax
+    )
+    #ax.set_title("Top 10 Number of Customer by City", loc="center", fontsize=30, weight='bold')
+    ax.set_ylabel(None)
+    ax.set_xlabel(None)
+    ax.tick_params(axis='y', labelsize=20)
+    ax.tick_params(axis='x', labelsize=15)
+    st.pyplot(fig)
+    
+    st.subheader("Top 10 Seller by Total Sales")
+    
+    fig, ax = plt.subplots(figsize=(20, 10))
+    colors = ["#90CAF9","#D3D3D3","#D3D3D3","#D3D3D3","#D3D3D3","#D3D3D3","#D3D3D3","#D3D3D3","#D3D3D3","#D3D3D3"]
+    sns.barplot(
+        x="sales", 
+        y="seller_id",
+        data=byseller_df.sort_values(by='sales', ascending=False),
+        palette=colors,
+        ax=ax
+    )
+    #ax.set_title("Top 10 Number of Customer by City", loc="center", fontsize=30, weight='bold')
+    ax.set_ylabel(None)
+    ax.set_xlabel(None)
+    ax.tick_params(axis='y', labelsize=20)
+    ax.tick_params(axis='x', labelsize=15)
+    st.pyplot(fig)
+    
+    
+    # Best Customer Based on RFM Parameters
+    st.subheader("Best Customer Based on RFM Parameters")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        avg_recency = round(rfm_df.recency.mean(), 1)
+        st.metric("Average Recency (days)", value=avg_recency)
+    
+    with col2:
+        avg_frequency = round(rfm_df.frequency.mean(), 2)
+        st.metric("Average Frequency", value=avg_frequency)
+    
+    with col3:
+        avg_frequency = format_currency(rfm_df.monetary.mean(), "BRL", locale='es_CO') 
+        st.metric("Average Monetary", value=avg_frequency)
+    
+    fig, ax = plt.subplots(nrows=3, ncols=1, figsize=(30, 30))
+    colors = ["#90CAF9", "#90CAF9", "#90CAF9", "#90CAF9", "#90CAF9"]
+    
+    sns.barplot(x="recency", y="customer_unique_id", orient='h', data=rfm_df.sort_values(by="recency", ascending=True).head(5), palette=colors, ax=ax[0])
+    ax[0].set_xlabel(None)
+    ax[0].set_ylabel("customer_unique_id", fontsize=30)
+    ax[0].set_title("By Recency (days)", loc="center", fontsize=50)
+    ax[0].tick_params(axis='x', labelsize=30, labelrotation=0)
+    ax[0].tick_params(axis='y', labelsize=30)
+    
+    
+    sns.barplot(x="frequency", y="customer_unique_id", orient='h', data=rfm_df.sort_values(by="frequency", ascending=False).head(5), palette=colors, ax=ax[1])
+    ax[1].set_xlabel(None)
+    ax[1].set_ylabel("customer_unique_id", fontsize=30)
+    ax[1].set_title("By Frequency", loc="center", fontsize=50)
+    ax[1].tick_params(axis='x', labelsize=30, labelrotation=0)
+    ax[1].tick_params(axis='y', labelsize=30)
+    
+    
+    sns.barplot(x="monetary", y="customer_unique_id", orient='h', data=rfm_df.sort_values(by="monetary", ascending=False).head(5), palette=colors, ax=ax[2])
+    ax[2].set_xlabel(None)
+    ax[2].set_ylabel("customer_unique_id", fontsize=30)
+    ax[2].set_title("By Monetary", loc="center", fontsize=50)
+    ax[2].tick_params(axis='x', labelsize=30, labelrotation=0)
+    ax[2].tick_params(axis='y', labelsize=30)
+    
+    
     st.pyplot(fig)
 
-with col2:
-    fig, ax = plt.subplots(dpi=170)
-    #explode = (0.05, 0, 0, 0, 0)
-    colors = sns.light_palette('seagreen')[0:len(byreview_df)] # Use a Seaborn color palette
-    ax.pie(byreview_df['review_count'], labels=byreview_df['review_score'], autopct='%1.2f%%', colors=colors, startangle=45, textprops={'fontsize': 12})
-    ax.axis('equal') # Ensures the pie chart is drawn as a circle
-    ax.set_title("Distribution of Review Score", loc="center", fontsize=15, weight='bold')
-    st.pyplot(fig)
+with tab2:
+    # City map
+    st.subheader("Total Sales and Customers in City Map")
+    
+    #st.dataframe(sales_cust_df)
+    
+    # Create a Folium map
+    map = folium.Map(location=[sales_cust_df['geolocation_lat'].mean(), sales_cust_df['geolocation_lng'].mean()], zoom_start=9)
+    
+    # Add markers with popups from DataFrame values
+    for index, row in sales_cust_df.iterrows():
+        popup_html = f"""
+        <h4>{row['customer_city']}</h4>
+        <p>Revenue: {row['revenue']:.2f}, Customers: {row['cust_count']}</p>
+        """
+        folium.Marker(location=[row['geolocation_lat'], row['geolocation_lng']],\
+                popup=folium.Popup(popup_html, max_width=300), icon=folium.Icon(color='blue', icon='info-sign')).add_to(map)
+    
+    st_folium(map, width=800)
+    
+    # Display the map (or save it to an HTML file)
+    
+    #map.save("citymap.html")
+    #webbrowser.open("citymap.html")
 
-st.subheader("Top 10 Number of Customer by City")
-
-fig, ax = plt.subplots(figsize=(20, 10))
-colors = ["#90CAF9","#D3D3D3","#D3D3D3","#D3D3D3","#D3D3D3","#D3D3D3","#D3D3D3","#D3D3D3","#D3D3D3","#D3D3D3"]
-sns.barplot(
-    x="customer_count", 
-    y="customer_city",
-    data=bystate_df.sort_values(by="customer_count", ascending=False),
-    palette=colors,
-    ax=ax
-)
-#ax.set_title("Top 10 Number of Customer by City", loc="center", fontsize=30, weight='bold')
-ax.set_ylabel(None)
-ax.set_xlabel(None)
-ax.tick_params(axis='y', labelsize=20)
-ax.tick_params(axis='x', labelsize=15)
-st.pyplot(fig)
-
-st.subheader("Top 10 Seller by Total Sales")
-
-fig, ax = plt.subplots(figsize=(20, 10))
-colors = ["#90CAF9","#D3D3D3","#D3D3D3","#D3D3D3","#D3D3D3","#D3D3D3","#D3D3D3","#D3D3D3","#D3D3D3","#D3D3D3"]
-sns.barplot(
-    x="sales", 
-    y="seller_id",
-    data=byseller_df.sort_values(by='sales', ascending=False),
-    palette=colors,
-    ax=ax
-)
-#ax.set_title("Top 10 Number of Customer by City", loc="center", fontsize=30, weight='bold')
-ax.set_ylabel(None)
-ax.set_xlabel(None)
-ax.tick_params(axis='y', labelsize=20)
-ax.tick_params(axis='x', labelsize=15)
-st.pyplot(fig)
-
-
-# Best Customer Based on RFM Parameters
-st.subheader("Best Customer Based on RFM Parameters")
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    avg_recency = round(rfm_df.recency.mean(), 1)
-    st.metric("Average Recency (days)", value=avg_recency)
-
-with col2:
-    avg_frequency = round(rfm_df.frequency.mean(), 2)
-    st.metric("Average Frequency", value=avg_frequency)
-
-with col3:
-    avg_frequency = format_currency(rfm_df.monetary.mean(), "BRL", locale='es_CO') 
-    st.metric("Average Monetary", value=avg_frequency)
-
-fig, ax = plt.subplots(nrows=3, ncols=1, figsize=(30, 30))
-colors = ["#90CAF9", "#90CAF9", "#90CAF9", "#90CAF9", "#90CAF9"]
-
-sns.barplot(x="recency", y="customer_unique_id", orient='h', data=rfm_df.sort_values(by="recency", ascending=True).head(5), palette=colors, ax=ax[0])
-ax[0].set_xlabel(None)
-ax[0].set_ylabel("customer_unique_id", fontsize=30)
-ax[0].set_title("By Recency (days)", loc="center", fontsize=50)
-ax[0].tick_params(axis='x', labelsize=30, labelrotation=0)
-ax[0].tick_params(axis='y', labelsize=30)
-
-
-sns.barplot(x="frequency", y="customer_unique_id", orient='h', data=rfm_df.sort_values(by="frequency", ascending=False).head(5), palette=colors, ax=ax[1])
-ax[1].set_xlabel(None)
-ax[1].set_ylabel("customer_unique_id", fontsize=30)
-ax[1].set_title("By Frequency", loc="center", fontsize=50)
-ax[1].tick_params(axis='x', labelsize=30, labelrotation=0)
-ax[1].tick_params(axis='y', labelsize=30)
-
-
-sns.barplot(x="monetary", y="customer_unique_id", orient='h', data=rfm_df.sort_values(by="monetary", ascending=False).head(5), palette=colors, ax=ax[2])
-ax[2].set_xlabel(None)
-ax[2].set_ylabel("customer_unique_id", fontsize=30)
-ax[2].set_title("By Monetary", loc="center", fontsize=50)
-ax[2].tick_params(axis='x', labelsize=30, labelrotation=0)
-ax[2].tick_params(axis='y', labelsize=30)
-
-
-st.pyplot(fig)
 
 st.caption('Dicoding e-Commerce Dashboard 2025')
