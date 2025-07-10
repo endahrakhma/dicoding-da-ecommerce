@@ -6,3 +6,4 @@ streamlit
 protobuf
 pillow
 babel
+folium
