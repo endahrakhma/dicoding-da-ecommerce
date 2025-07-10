@@ -8,7 +8,7 @@ conda activate ecomm-da
 pip install -r requirements.txt
 ```
 
-## Run streamlit app
+## Run streamlit local app
 ```
 streamlit run dashboard_app.py
 ```
