@@ -14,8 +14,7 @@ streamlit run dashboard_app.py
 ```
 
 ## Run steamlit cloud
-[https://ecommerce-endahrakhma.streamlit.app/](https://ecommerce-endahrakhma.streamlit.app/)
+[https://ecommerce-dashboard-endahrakhma.streamlit.app/](https://ecommerce-dashboard-endahrakhma.streamlit.app/)
 
-![E-commerce Streamlit Screenshot](dashboard-streamlit.jpg)
 
 
