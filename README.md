@@ -16,5 +16,7 @@ streamlit run dashboard_app.py
 ## Run streamlit cloud
 [https://ecommerce-dashboard-endahrakhma.streamlit.app/](https://ecommerce-dashboard-endahrakhma.streamlit.app/)
 
+## Screenshot Dashboard
+![Tab : Metrics](ss-app1.jpg)
 
-
+![Tab : Map](ss-app2.jpg)
